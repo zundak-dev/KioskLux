@@ -33,6 +33,8 @@ cart: List[Photo] = []
 from uuid import uuid4
 from PIL import Image
 import mercadopago
+from libxmp.utils import file_to_dict, dict_to_file
+from libxmp import consts
 
 sdk = mercadopago.SDK(os.environ.get("MERCADOPAGO_ACCESS_TOKEN"))
 
@@ -158,6 +160,7 @@ def create_payment():
 
 
 payment_status = {}
+paid_orders = {}
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -167,8 +170,30 @@ async def webhook(request: Request):
         result = sdk.payment().get(payment_id)
         status = result["response"]["status"]
         payment_status[payment_id] = status
+        if status == "approved":
+            order_photos = cart.copy()
+            paid_orders[payment_id] = order_photos
+            add_tags_to_photos(order_photos, f"Pedido_{payment_id}")
+            # Limpar carrinho após a compra
+            global cart
+            cart = []
         print(f"Payment {payment_id} status: {status}")
     return {"status": "ok"}
+
+def add_tags_to_photos(photos: List[Photo], tag: str):
+    for photo in photos:
+        raw_path = os.path.join(STATIC_DIR, photo.filename) # Assumindo que o RAW tem o mesmo nome
+        if os.path.exists(raw_path):
+            xmp = file_to_dict(raw_path)
+            if consts.XMP_NS_DC not in xmp:
+                xmp[consts.XMP_NS_DC] = {}
+            if 'subject' not in xmp[consts.XMP_NS_DC]:
+                xmp[consts.XMP_NS_DC]['subject'] = [('', [])]
+
+            subjects = xmp[consts.XMP_NS_DC]['subject'][0][1]
+            if tag not in subjects:
+                subjects.append((tag, []))
+                dict_to_file(xmp, raw_path)
 
 @app.get("/payment-status/{payment_id}")
 def get_payment_status(payment_id: str):
