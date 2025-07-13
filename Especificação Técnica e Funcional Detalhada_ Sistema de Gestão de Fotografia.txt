@@ -1,0 +1,222 @@
+﻿Especificação Técnica e Funcional Detalhada: Sistema de Gestão para Fotografia de Eventos
+
+
+
+
+Introdução
+
+
+Este documento fornece uma especificação técnica e funcional exaustiva para o desenvolvimento de um sistema de software integrado, projetado para revolucionar o fluxo de trabalho de captura, gerenciamento, venda e análise de fotografias em eventos de alto volume, como festivais de dança. O sistema proposto substitui processos manuais, propensos a erros e demorados, por uma solução digital, automatizada e coesa, que aprimora a eficiência operacional, a experiência do cliente e a capacidade de análise de negócios do fotógrafo.
+A arquitetura é modular, composta por cinco subsistemas principais que operam em conjunto para criar um ecossistema digital unificado:
+1. Motor de Ingestão e Processamento em Tempo Real
+2. Quiosque de Seleção do Cliente (Interface de Ponto de Venda)
+3. Módulo de Transação e Pagamento Seguro
+4. Ponte de Sincronização com o Adobe Lightroom
+5. Painel de Análise de Negócios (Analytics)
+Cada módulo é detalhado abaixo, com foco na sua arquitetura, lógica de implementação, tecnologias recomendadas e funcionalidades específicas.
+________________
+
+
+Módulo 1: Motor de Ingestão e Processamento em Tempo Real
+
+
+Objetivo Estratégico: Eliminar o gargalo da transferência manual de dados e criar um pipeline de imagens "da lente à tela" quase instantâneo, garantindo que as fotos estejam disponíveis para venda segundos após a captura.
+
+
+1.1. Arquitetura de Ingestão e Rede
+
+
+A base deste módulo é uma infraestrutura de rede local (LAN) robusta e dedicada, isolada de redes públicas do local para garantir estabilidade e segurança.
+* Transferência Sem Fio: A transferência de imagens da câmera para o servidor principal será realizada via um transmissor sem fio de nível profissional, como o Nikon WT-7A.1 Este dispositivo é superior ao Wi-Fi embutido da câmera por oferecer maior alcance (até 200m em condições ideais), estabilidade superior em ambientes com alta interferência de radiofrequência (RF) e a capacidade de se conectar a uma rede gerenciada via modo Estação.4
+* Rede Local Dedicada: Uma LAN privada será criada usando um roteador de alto desempenho (ex: Asus ROG, TP-Link Archer) 6 e pontos de acesso (APs) de nível empresarial (ex: UniFi).8 A rede será segmentada:
+   * SSID de Produção: Uma rede de 5 GHz, com SSID oculto e criptografia WPA3, dedicada exclusivamente à transferência de imagens da câmera para o servidor. Isso minimiza a interferência e maximiza a largura de banda.
+   * SSID de Vendas: Uma segunda rede para conectar os Quiosques de Cliente ao servidor.
+   * Conexão de Internet: A conexão com a internet, necessária apenas para o processamento de pagamentos, será feita através de um modem 4G/5G dedicado, conectado à porta WAN do roteador principal, isolando o tráfego de produção de instabilidades da rede celular.9
+
+
+1.2. Lógica de Processamento Automatizado
+
+
+* Monitoramento de Diretório: Um serviço Python em segundo plano, implementado com a biblioteca watchfiles, monitorará continuamente a pasta de destino do FTP no servidor.12
+watchfiles é preferível a alternativas mais antigas por sua API moderna e suporte assíncrono, garantindo uma resposta de baixa latência.12
+* Tratamento de Arquivos RAW (NEF): Ao detectar um novo arquivo .NEF, o sistema acionará a seguinte pipeline:
+   1. Leitura do RAW: O arquivo será aberto usando a biblioteca rawpy, um wrapper Python para a poderosa LibRaw, o padrão da indústria para decodificação de arquivos RAW.14
+   2. Extração de Prova Rápida: Para maximizar a velocidade, o sistema não processará o arquivo RAW completo inicialmente. Em vez disso, ele usará a função raw.extract_thumb() para extrair a visualização JPEG de alta qualidade que a câmera Nikon já embute no arquivo NEF.15 Esta operação é ordens de magnitude mais rápida do que o demosaicing completo, sendo a chave para a percepção de tempo real pelo cliente.
+   3. Aplicação de Marca d'Água: A imagem de prova extraída será carregada como um objeto na biblioteca Pillow (PIL).18 Uma marca d'água será aplicada dinamicamente. A implementação permitirá configurar:
+   * Tipo de Marca d'Água: Texto (ex: nome do arquivo, nome do evento) ou Imagem (logotipo do estúdio).19
+   * Aparência: Posição (canto, centro, mosaico), opacidade, cor e tamanho da fonte, que pode ser ajustada dinamicamente com base no tamanho da imagem.21
+   * Exemplo de Lógica (Pillow): O código usará ImageDraw.Draw() para criar uma camada de desenho e ImageFont.truetype() para carregar uma fonte. O texto será desenhado na imagem de prova antes de salvá-la.19
+   * Catalogação no Banco de Dados: Após o processamento, as informações da imagem são persistidas no banco de dados SQLite central. Uma transação SQL INSERT será executada na tabela Photos, populando os campos filename, filepath_raw, filepath_preview e ingested_at.
+   * Gestão de Erros: O motor de ingestão incluirá um sistema de log robusto. Se um arquivo estiver corrompido e rawpy falhar, o arquivo será movido para uma pasta de quarentena (/quarantine) e o erro será registrado para análise posterior, garantindo que um arquivo defeituoso não interrompa todo o processo.
+________________
+
+
+Módulo 2: Quiosque de Seleção do Cliente
+
+
+Objetivo Estratégico: Oferecer uma experiência de compra autônoma, intuitiva e envolvente, que incentive a exploração do catálogo e maximize o valor do pedido, ao mesmo tempo que elimina completamente os erros de anotação manual.
+
+
+2.1. Design da Interface e Experiência do Usuário (UI/UX)
+
+
+A interface será desenvolvida usando o framework PyQt6, escolhido por sua robustez, conjunto completo de widgets e ferramentas de design visual como o Qt Designer, que aceleram o desenvolvimento.23 A experiência do usuário será otimizada para um público não técnico (pais) usando telas de toque.
+   * Fluxo de Navegação:
+   1. Tela de Boas-Vindas: Uma tela inicial com a marca do evento e um grande botão "Encontre suas fotos".
+   2. Tela de Filtragem: O cliente será solicitado a selecionar a Sessão e a Coreografia em que o dançarino participou. Esses dados serão extraídos da estrutura de pastas durante a ingestão e armazenados como tags no banco de dados.
+   3. Galeria de Imagens: A tela principal, exibindo uma grade de miniaturas das fotos filtradas. A rolagem será infinita ("infinite scroll").
+   4. Visualização Ampliada: Tocar em uma miniatura a exibirá em tela cheia, com botões claros para "Adicionar ao Carrinho" e "Voltar". Um gesto de deslizar (swipe) permitirá navegar entre as fotos da mesma coreografia.
+   5. Carrinho de Compras: Acessível a qualquer momento, exibe as miniaturas selecionadas, a quantidade, o preço unitário e o total. Um botão "Remover" estará presente em cada item.
+
+
+2.2. Implementação Técnica (PyQt6)
+
+
+   * Componentes Gráficos:
+   * A navegação entre telas será gerenciada por um QStackedWidget.
+   * A galeria de imagens será implementada usando um QListWidget com um QStyledItemDelegate personalizado para renderizar as miniaturas e os nomes dos arquivos.
+   * Carregamento Preguiçoso (Lazy Loading): Para garantir um desempenho suave com milhares de imagens, o modelo de dados (QAbstractListModel) só carregará as miniaturas que estão visíveis na tela. À medida que o usuário rola, o modelo buscará os próximos lotes de imagens do banco de dados sob demanda.
+   * Comunicação com o Banco de Dados: A aplicação do quiosque se conectará ao banco de dados SQLite central (localizado no servidor principal) através da rede local. Todas as consultas para buscar fotos serão parametrizadas para evitar injeção de SQL.
+   * Gerenciamento de Estado do Carrinho: O estado do carrinho de compras de cada quiosque será mantido localmente em um objeto Python. Quando o cliente decidir finalizar a compra, este objeto será usado para criar o pedido no banco de dados central. Isso evita escritas constantes no banco de dados a cada item adicionado/removido.
+________________
+
+
+Módulo 3: Gestão de Pedidos e Pagamento
+
+
+Objetivo Estratégico: Automatizar o processo de checkout, fornecer um método de pagamento digital robusto (PIX) que funcione de forma confiável na infraestrutura de rede local e criar um registro digital completo e à prova de falhas de todas as transações.
+
+
+3.1. Fluxo de Transação
+
+
+   1. Finalizar Compra: No quiosque, o cliente clica em "Finalizar Compra".
+   2. Coleta de Dados: Um formulário solicita o nome e o e-mail do cliente. A validação de e-mail será feita no front-end.
+   3. Criação do Pedido: O sistema executa uma transação atômica no banco de dados central para:
+   * Inserir os dados do cliente na tabela Customers.
+   * Inserir um novo registro na tabela Orders com payment_status = 'pending', associado ao novo cliente.
+   * Iterar sobre os itens do carrinho e inserir um registro para cada um na tabela de junção Order_Items.
+   4. Geração do Pagamento: O back-end do sistema se comunica com a API do Mercado Pago.24
+
+
+3.2. Integração com a API do Mercado Pago
+
+
+   * Criação do Pagamento: Usando o SDK oficial do Mercado Pago para Python, o sistema fará uma chamada POST para o endpoint de criação de pagamento.27 O corpo da requisição conterá:
+   * transaction_amount: O valor total do pedido.
+   * description: Uma descrição (ex: "Fotos Festival de Dança - Pedido #123").
+   * payment_method_id: 'pix'.
+   * payer: { email: email do cliente }.
+   * Geração de QR Code PIX: A resposta da API do Mercado Pago conterá a string "copia e cola" do PIX.27 O sistema usará a biblioteca
+qrcode para converter essa string em uma imagem de QR Code.28
+      * Customização do QR Code: A biblioteca qrcode permite customizações importantes para o ambiente de um evento:31
+      * error_correction: Será definido como ERROR_CORRECT_H, o nível mais alto. Isso garante que o código possa ser lido mesmo se a câmera do celular não o capturar perfeitamente ou se houver pequenas obstruções.29
+      * box_size e border: Serão ajustados para garantir que o QR Code seja grande e claro na tela do quiosque.
+      * Confirmação via Webhook: O sistema exporá um endpoint de webhook seguro. Este endpoint será registrado na plataforma do Mercado Pago para receber Notificações de Pagamento Instantâneas (IPN).32 Quando um pagamento PIX é confirmado, o Mercado Pago envia uma notificação POST para este endpoint. O código do webhook irá:
+      1. Verificar a autenticidade da notificação.
+      2. Analisar o corpo da notificação para extrair o ID do pagamento.
+      3. Atualizar o payment_status do pedido correspondente no banco de dados de 'pending' para 'paid'.
+________________
+
+
+Módulo 4: Ponte com o Adobe Lightroom
+
+
+Objetivo Estratégico: Fechar o ciclo do fluxo de trabalho, entregando ao fotógrafo uma lista de trabalho organizada e acionável diretamente em seu principal software de edição, eliminando completamente a busca manual por nomes de arquivos.
+
+
+4.1. Método Recomendado: Sincronização via Metadados XMP
+
+
+Esta abordagem é a mais segura, profissional e não destrutiva, pois utiliza padrões abertos e não modifica diretamente o arquivo de catálogo do Lightroom.33
+      * Lógica de Execução:
+      1. Um serviço em segundo plano monitora a tabela Orders em busca de novos pedidos com payment_status = 'paid'.
+      2. Para cada foto (photo_id) em um pedido pago, o sistema recupera o caminho do arquivo RAW (filepath_raw) do banco de dados.
+      3. Usando a biblioteca python-xmp-toolkit, o sistema abre o arquivo para atualização.34
+      4. Uma nova palavra-chave é adicionada ao campo dc:subject (um array de tags). A palavra-chave será estruturada para ser única e pesquisável, por exemplo: Evento2025_Pedido123_ClienteSilva.34
+      5. A chamada de código específica será xmp.append_array_item(consts.XMP_NS_DC, 'subject', 'keyword_string', options), garantindo que a tag seja adicionada à lista existente sem sobrescrever outras.34
+      6. O sistema salva as alterações no arquivo sidecar .xmp associado ao arquivo RAW.
+      * Configuração Única no Lightroom: O fotógrafo precisará realizar duas configurações únicas:
+      1. Habilitar Escrita XMP: Em Edit > Catalog Settings > Metadata, marcar a opção "Automatically write changes into XMP".33
+      2. Criar Coleção Inteligente: Criar uma nova "Smart Collection" com a regra: Keywords > contain > Evento2025_Pedido.
+      * Resultado: Assim que o sistema marca um arquivo, ele aparecerá automaticamente na Coleção Inteligente, criando uma lista de trabalho de edição que se popula sozinha.
+
+
+4.2. Método Alternativo (Alto Risco): Manipulação Direta do Catálogo
+
+
+Esta abordagem, embora tecnicamente possível, é fortemente desaconselhada para um produto comercial devido ao risco de corrupção do catálogo do Lightroom. Ela envolve a escrita direta no arquivo .lrcat, que é um banco de dados SQLite.36 Se implementada, deve incluir backups automáticos obrigatórios do catálogo antes de cada operação de escrita.
+________________
+
+
+Módulo 5: Painel de Análise (Analytics)
+
+
+Objetivo Estratégico: Transformar dados transacionais brutos em insights de negócios estratégicos, permitindo que o fotógrafo entenda o desempenho de vendas, otimize preços e identifique oportunidades de crescimento.
+
+
+5.1. Arquitetura e Acesso
+
+
+O painel será uma aplicação gráfica, construída com PyQt6 (integrada ao app principal) ou como uma aplicação web leve (usando Flask/Dash) acessível a partir de qualquer dispositivo na rede local do evento. Ele consultará o banco de dados SQLite em tempo real.
+
+
+5.2. Indicadores de Desempenho Chave (KPIs) e Visualizações
+
+
+O painel será dividido em seções, cada uma respondendo a perguntas de negócios específicas:
+      * Visão Geral do Evento (Dashboard Principal):
+      * Receita Total: SUM(total_amount) FROM Orders WHERE payment_status = 'paid'.
+      * Total de Pedidos: COUNT(order_id) FROM Orders WHERE payment_status = 'paid'.
+      * Ticket Médio: AVG(total_amount) FROM Orders WHERE payment_status = 'paid'.
+      * Total de Fotos Vendidas: COUNT(*) FROM Order_Items juntado com pedidos pagos.
+      * Taxa de Conversão (Opcional): Se for possível rastrear sessões de quiosque, (Nº de Pedidos / Nº de Sessões de Quiosque).
+      * Análise de Desempenho Temporal:
+      * Visualização: Gráfico de barras mostrando a receita por hora ou por sessão do evento.
+      * Insight de Negócio: Responde a "Quais são os horários de pico de vendas?". Ajuda a otimizar a alocação de pessoal de vendas e a identificar os momentos de maior engajamento do cliente.
+      * Análise de Popularidade de Produtos (Fotos):
+      * Visualização: Uma grade de miniaturas mostrando as "Top 20 Fotos Mais Vendidas", ordenadas pelo número de vezes que aparecem em Order_Items.
+      * Filtros: O usuário poderá filtrar esta visualização por coreografia, sessão ou dia do evento.
+      * Insight de Negócio: Responde a "Quais tipos de fotos (poses, grupos, momentos) são mais lucrativos?". Permite ao fotógrafo orientar sua captura em eventos futuros para focar em imagens com maior potencial comercial.
+      * Análise de Desempenho por Coreografia/Grupo:
+      * Visualização: Uma tabela mostrando cada coreografia, o número total de fotos tiradas, o número de fotos vendidas e a receita total gerada.
+      * Insight de Negócio: Responde a "Quais grupos ou apresentações são mais rentáveis?". Ajuda a entender o perfil de compra de diferentes grupos de idade e a ajustar estratégias de preço ou pacotes.
+      * Relatórios e Exportação:
+      * Funcionalidade para exportar os dados de qualquer visualização para um arquivo CSV, permitindo uma análise mais aprofundada em ferramentas como o Microsoft Excel.
+Works cited
+      1. Nikon WT-7A Wireless Transmitter 27173 - Filmtools, accessed July 12, 2025, https://www.filmtools.com/nikon-wt-7a-wireless-transmitter.html
+      2. Nikon WT-7A Wireless Transmitter 27173 - Adorama, accessed July 12, 2025, https://www.adorama.com/inkwt7.html
+      3. Wireless Tethering Options : r/Photoassistants - Reddit, accessed July 12, 2025, https://www.reddit.com/r/Photoassistants/comments/156mkv5/wireless_tethering_options/
+      4. Nikon WT-7A Wireless Transmitter - Etoren.com, accessed July 12, 2025, http://www.etoren.com/products/nikon-wt-7a-wireless-transmitter
+      5. Nikon Wt 7 Wireless Network Transmitter - TrueToad, accessed July 12, 2025, https://www.truetoad.com/Reviews/nikon-wt-7
+      6. Best Wi-Fi Routers for 2025: Top Picks for Every Home Network - CNET, accessed July 12, 2025, https://www.cnet.com/home/internet/best-wi-fi-routers/
+      7. Portable WiFi Routers - Best Buy, accessed July 12, 2025, https://www.bestbuy.com/site/shop/portable-wifi-routers
+      8. The ultimate guide to event Wi-Fi Solutions - UniHosted, accessed July 12, 2025, https://www.unihosted.com/blog/the-ultimate-guide-to-event-wifi
+      9. Event WiFi Rental – Temporary WiFi Hotspot for Events - Made By WiFi, accessed July 12, 2025, https://www.madebywifi.com/solutions/4g-internet-kit-rental/
+      10. How to Get WiFi for an Event: 8 Steps to Stay Connected, accessed July 12, 2025, https://www.madebywifi.com/blog/how-to-get-wifi-for-an-event/
+      11. The 6 Best Portable Wi-Fi Hotspots of 2025, Tested and Reviewed - Travel + Leisure, accessed July 12, 2025, https://www.travelandleisure.com/style/travel-accessories/best-portable-wifi-hotspots
+      12. Watchfiles: Real-Time File Monitoring in Python | by Aardvark Infinity - Medium, accessed July 12, 2025, https://medium.com/aardvark-infinity/watchfiles-real-time-file-monitoring-in-python-0dd43b632978
+      13. How to use watchdog to monitor file system changes using Python - YouTube, accessed July 12, 2025, https://www.youtube.com/watch?v=jvg9N8zNVjA
+      14. Reading Nikon raw (NEF) images with rawpy vs imageio in python - Stack Overflow, accessed July 12, 2025, https://stackoverflow.com/questions/60941891/reading-nikon-raw-nef-images-with-rawpy-vs-imageio-in-python
+      15. letmaik/rawpy: RAW image processing for Python, a wrapper for libraw - GitHub, accessed July 12, 2025, https://github.com/letmaik/rawpy
+      16. RawPy class - GitHub Pages, accessed July 12, 2025, https://letmaik.github.io/rawpy/api/rawpy.RawPy.html
+      17. rawpy - PyPI, accessed July 12, 2025, https://pypi.org/project/rawpy/0.3.0/
+      18. Top 8 Image-Processing Python Libraries Used in Machine Learning - Neptune.ai, accessed July 12, 2025, https://neptune.ai/blog/image-processing-python-libraries-for-machine-learning
+      19. Creating a Watermark with Python Pillow - Tutorialspoint, accessed July 12, 2025, https://www.tutorialspoint.com/python_pillow/python_pillow_creating_a_watermark.htm
+      20. Python Pillow - Creating a Watermark - GeeksforGeeks, accessed July 12, 2025, https://www.geeksforgeeks.org/python/python-pillow-creating-a-watermark/
+      21. How to Add a Copyright or Watermark to Photos Using Python | by Robbert Brouwers, accessed July 12, 2025, https://betterprogramming.pub/add-copyright-or-watermark-to-photos-using-python-a3773c71d431
+      22. Adding a repeating watermark to an image using Python and Pillow - GitHub Gist, accessed July 12, 2025, https://gist.github.com/1bc84cfa252ec084e1cdbfb6fc766720
+      23. 8 Best Python GUI Frameworks - BairesDev, accessed July 12, 2025, https://www.bairesdev.com/blog/best-python-gui-libraries/
+      24. Other payment methods - Integration configuration - Mercado Pago Developers, accessed July 12, 2025, https://www.mercadopago.com.br/developers/en/docs/checkout-api/integration-configuration/other-payment-methods
+      25. Other payment methods - Integration configuration - Mercado Pago Developers, accessed July 12, 2025, https://www.mercadopago.com.ar/developers/en/docs/checkout-api/integration-configuration/other-payment-methods
+      26. SPEI Transfers - Integration configuration - Mercado Pago Developers, accessed July 12, 2025, https://www.mercadopago.com.mx/developers/en/docs/checkout-api/integration-configuration/spei-transfers
+      27. mercadopago/sdk-python: Mercado Pago's Official Python ... - GitHub, accessed July 12, 2025, https://github.com/mercadopago/sdk-python
+      28. qrcode - PyPI, accessed July 12, 2025, https://pypi.org/project/qrcode/
+      29. Generate QR Codes with Python: An Easy Guide | by Rahul Prasad M. - Medium, accessed July 12, 2025, https://medium.com/@rahulmallah785671/create-qr-code-by-using-python-2370d7bd9b8d
+      30. Generate Dynamic QR code Using Python - Kaggle, accessed July 12, 2025, https://www.kaggle.com/code/sonalisingh1411/generate-dynamic-qr-code-using-python
+      31. How to Create QR Codes with Python | Generate QR Codes Easily - YouTube, accessed July 12, 2025, https://www.youtube.com/watch?v=2yTlvPSIePs
+      32. mercadopago - PyPI, accessed July 12, 2025, https://pypi.org/project/mercadopago/0.1.8/
+      33. Metadata basics and actions in Lightroom Classic - Adobe Support, accessed July 12, 2025, https://helpx.adobe.com/lightroom-classic/help/metadata-basics-actions.html
+      34. Using Python XMP Toolkit - ESA/Hubble, accessed July 12, 2025, https://esahubble.org/static/projects/python-xmp-toolkit/docs/using.html
+      35. What libraries to use for EXIF and XMP photo metadata manipulation? - Reddit, accessed July 12, 2025, https://www.reddit.com/r/learnpython/comments/1l28xw8/what_libraries_to_use_for_exif_and_xmp_photo/
+      36. py-lightroom-export/main.py at master - GitHub, accessed July 12, 2025, https://github.com/philroche/py-lightroom-export/blob/master/main.py
