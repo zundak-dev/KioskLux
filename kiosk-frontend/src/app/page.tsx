@@ -29,13 +29,24 @@ export default function Home() {
 
   useEffect(() => {
     fetchPhotos();
+    fetch(`http://localhost:8000/cart`)
+      .then((res) => res.json())
+      .then((data) => {
+        setSelected(data.map((p: any) => p.id));
+      });
     // eslint-disable-next-line
   }, [q, page]);
 
   const toggleSelect = (id: number) => {
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-    );
+    const isSelected = selected.includes(id);
+    const endpoint = isSelected ? `http://localhost:8000/cart/${id}` : `http://localhost:8000/cart/${id}`;
+    const method = isSelected ? 'DELETE' : 'POST';
+
+    fetch(endpoint, { method })
+      .then(res => res.json())
+      .then(data => {
+        setSelected(data.map((p: any) => p.id));
+      });
   };
 
   return (
@@ -100,13 +111,16 @@ export default function Home() {
           {selected.length === 0 ? (
             <div style={{ color: "#888" }}>Nenhuma foto selecionada.</div>
           ) : (
-            <ul className={styles.cartList}>
-              {photos.filter((p) => selected.includes(p.id)).map((photo) => (
-                <li key={photo.id}>
-                  {photo.filename}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className={styles.cartList}>
+                {photos.filter((p) => selected.includes(p.id)).map((photo) => (
+                  <li key={photo.id}>
+                    {photo.filename}
+                  </li>
+                ))}
+              </ul>
+              <button className={styles.checkoutButton}>Finalizar Compra</button>
+            </>
           )}
         </div>
       </main>

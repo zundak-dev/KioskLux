@@ -28,6 +28,8 @@ class Photo(BaseModel):
     thumb_url: str
     is_favorited: bool = False
 
+cart: List[Photo] = []
+
 from uuid import uuid4
 from PIL import Image
 
@@ -65,6 +67,24 @@ def get_photos(
     if q:
         photos = [p for p in photos if q.lower() in p.filename.lower()]
     return photos[offset:offset+limit]
+
+@app.post("/cart/{photo_id}", response_model=List[Photo])
+def add_to_cart(photo_id: int):
+    photos = list_photos()
+    photo = next((p for p in photos if p.id == photo_id), None)
+    if photo and photo not in cart:
+        cart.append(photo)
+    return cart
+
+@app.delete("/cart/{photo_id}", response_model=List[Photo])
+def remove_from_cart(photo_id: int):
+    global cart
+    cart = [p for p in cart if p.id != photo_id]
+    return cart
+
+@app.get("/cart", response_model=List[Photo])
+def get_cart():
+    return cart
 
 @app.post("/upload", response_model=Photo)
 def upload_photo(file: UploadFile = File(...), filename: str = Form(...)):
