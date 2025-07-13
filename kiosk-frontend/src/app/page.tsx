@@ -49,10 +49,16 @@ export default function Home() {
       .then(res => res.json())
       .then(data => {
         setSelected(data.map((p: any) => p.id));
+        // Manually update the photos in the cart
+        const updatedCartPhotos = photos.filter(p => data.map((dp: any) => dp.id).includes(p.id));
+        // This is a workaround, a better solution would be to have a global state management
+        // or fetch the cart content from the server again.
+        // For now, we will just update the selected state.
       });
   };
 
   const handleCheckout = () => {
+    setLoading(true);
     fetch(`http://localhost:8000/pay`, { method: 'POST' })
       .then(res => res.json())
       .then(data => {
@@ -60,7 +66,8 @@ export default function Home() {
           setQrCode(data.qr_code_base64);
           pollPaymentStatus(data.payment_id);
         }
-      });
+      })
+      .finally(() => setLoading(false));
   };
 
   const pollPaymentStatus = (paymentId: string) => {
@@ -143,6 +150,7 @@ export default function Home() {
         selectedPhotos={photos.filter(p => selected.includes(p.id))}
         onRemove={toggleSelect}
         onCheckout={handleCheckout}
+        loading={loading}
       />
 
       <QRCodeModal qrCode={qrCode} onClose={() => setQrCode("")} />

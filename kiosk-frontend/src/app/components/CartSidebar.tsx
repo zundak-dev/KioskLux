@@ -13,9 +13,10 @@ interface Props {
   selectedPhotos: Photo[];
   onRemove: (id: number) => void;
   onCheckout: () => void;
+  loading: boolean;
 }
 
-export default function CartSidebar({ isOpen, onClose, selectedPhotos, onRemove, onCheckout }: Props) {
+export default function CartSidebar({ isOpen, onClose, selectedPhotos, onRemove, onCheckout, loading }: Props) {
   return (
     <div className={`fixed top-0 right-0 h-full w-96 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
       <div className="p-6 flex justify-between items-center border-b">
@@ -44,10 +45,10 @@ export default function CartSidebar({ isOpen, onClose, selectedPhotos, onRemove,
       <div className="absolute bottom-0 left-0 right-0 p-6 border-t bg-white">
         <button
           onClick={onCheckout}
-          disabled={selectedPhotos.length === 0}
+          disabled={selectedPhotos.length === 0 || loading}
           className="w-full bg-blue-500 text-white font-bold py-3 rounded-lg hover:bg-blue-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
         >
-          Finalizar Compra ({selectedPhotos.length} {selectedPhotos.length === 1 ? 'item' : 'itens'})
+          {loading ? "Processando..." : `Finalizar Compra (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'item' : 'itens'})`}
         </button>
       </div>
     </div>
