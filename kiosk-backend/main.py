@@ -144,15 +144,35 @@ def create_payment():
             "email": "test@test.com",
         },
         "items": items,
+        "notification_url": "https://webhook.site/#!/b7c8f2f0-7294-434a-9f5b-0e6e7d6b3e3e"
     }
 
     result = sdk.payment().create(payment_data)
     payment = result["response"]
 
     return {
+        "payment_id": payment["id"],
         "qr_code": payment["point_of_interaction"]["transaction_data"]["qr_code"],
         "qr_code_base64": payment["point_of_interaction"]["transaction_data"]["qr_code_base64"],
     }
+
+
+payment_status = {}
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    data = await request.json()
+    if data["type"] == "payment":
+        payment_id = data["data"]["id"]
+        result = sdk.payment().get(payment_id)
+        status = result["response"]["status"]
+        payment_status[payment_id] = status
+        print(f"Payment {payment_id} status: {status}")
+    return {"status": "ok"}
+
+@app.get("/payment-status/{payment_id}")
+def get_payment_status(payment_id: str):
+    return {"status": payment_status.get(payment_id, "pending")}
 
 
 @app.get("/")
