@@ -32,6 +32,9 @@ cart: List[Photo] = []
 
 from uuid import uuid4
 from PIL import Image
+import mercadopago
+
+sdk = mercadopago.SDK(os.environ.get("MERCADOPAGO_ACCESS_TOKEN"))
 
 # Remove mock de dados fixos
 
@@ -86,37 +89,71 @@ def remove_from_cart(photo_id: int):
 def get_cart():
     return cart
 
-@app.post("/upload", response_model=Photo)
-def upload_photo(file: UploadFile = File(...), filename: str = Form(...)):
-    # Salvar arquivo enviado com nome único se já existir
-    fname = filename
-    file_path = os.path.join(STATIC_DIR, fname)
-    if os.path.exists(file_path):
-        base, ext = os.path.splitext(fname)
-        fname = f"{base}_{uuid4().hex[:6]}{ext}"
+@app.post("/upload", response_model=List[Photo])
+def upload_photo(files: List[UploadFile] = File(...)):
+    uploaded_photos = []
+    for file in files:
+        fname = file.filename
         file_path = os.path.join(STATIC_DIR, fname)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    # Gera thumb
-    thumb = f"thumb_{fname}"
-    thumb_path = os.path.join(STATIC_DIR, thumb)
-    try:
-        im = Image.open(file_path)
-        im.thumbnail((128,128))
-        im.save(thumb_path)
-    except Exception:
-        shutil.copyfile(file_path, thumb_path)
-    # Retorna foto recém-enviada
-    return Photo(
-        id=0,
-        filename=fname,
-        url=f"/static/{fname}",
-        thumb_url=f"/static/{thumb}",
-    )
+        if os.path.exists(file_path):
+            base, ext = os.path.splitext(fname)
+            fname = f"{base}_{uuid4().hex[:6]}{ext}"
+            file_path = os.path.join(STATIC_DIR, fname)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        # Gera thumb
+        thumb = f"thumb_{fname}"
+        thumb_path = os.path.join(STATIC_DIR, thumb)
+        try:
+            im = Image.open(file_path)
+            im.thumbnail((128,128))
+            im.save(thumb_path)
+        except Exception:
+            shutil.copyfile(file_path, thumb_path)
+
+        photo = Photo(
+            id=0,
+            filename=fname,
+            url=f"/static/{fname}",
+            thumb_url=f"/static/{thumb}",
+        )
+        uploaded_photos.append(photo)
+    return uploaded_photos
 
 @app.get("/static/{file_path}")
 def serve_static(file_path: str):
     return FileResponse(os.path.join(STATIC_DIR, file_path))
+
+@app.post("/pay", response_model=dict)
+def create_payment():
+    if not cart:
+        return {"error": "Carrinho vazio"}
+
+    items = []
+    for photo in cart:
+        items.append({
+            "title": photo.filename,
+            "quantity": 1,
+            "unit_price": 10.0, # Preço mock
+        })
+
+    payment_data = {
+        "transaction_amount": sum(item['unit_price'] for item in items),
+        "payment_method_id": "pix",
+        "payer": {
+            "email": "test@test.com",
+        },
+        "items": items,
+    }
+
+    result = sdk.payment().create(payment_data)
+    payment = result["response"]
+
+    return {
+        "qr_code": payment["point_of_interaction"]["transaction_data"]["qr_code"],
+        "qr_code_base64": payment["point_of_interaction"]["transaction_data"]["qr_code_base64"],
+    }
+
 
 @app.get("/")
 def root():
