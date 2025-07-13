@@ -47,17 +47,16 @@ export default function UploadPhoto({ onUpload }: Props) {
     setLoading(true);
     setSuccess(false);
     setError("");
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append("files", file, file.name);
+    });
     try {
-      for (const file of files) {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("filename", file.name);
-        const res = await fetch("http://localhost:8000/upload", {
-          method: "POST",
-          body: formData,
-        });
-        if (!res.ok) throw new Error(`Erro ao enviar ${file.name}`);
-      }
+      const res = await fetch("http://localhost:8000/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error(`Erro ao enviar os arquivos`);
       setSuccess(true);
       setFiles([]);
       if (onUpload) onUpload();
